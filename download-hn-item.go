@@ -1,14 +1,16 @@
 package main
 
 import (
-	"context"
-	"encoding/json"
-	"fmt"
-	"os"
+  "context"
+  "encoding/json"
+  "fmt"
+  "os"
+  "os/signal"
+  "syscall"
 
-	"github.com/johnwarden/hn"
-	"github.com/pkg/errors"
-	"github.com/schollz/progressbar/v3"
+  "github.com/johnwarden/hn"
+  "github.com/pkg/errors"
+  "github.com/schollz/progressbar/v3"
   "github.com/jessevdk/go-flags"
 )
 
@@ -64,26 +66,26 @@ func getItemWithComments(ctx context.Context, id int) {
 }
 
 func getComments(ctx context.Context, client *hn.Client, ids []int, out chan hn.Item) error {
-	if len(ids) == 0 {
-		return nil
-	}
-	// fmt.Println("Getting comments", ids)
-	comments, err := client.GetItems(ctx, ids, maxGoroutines)
-	if err != nil {
-		return errors.Wrapf(err, "client.GetItems(%v)", ids)
-	}
+  if len(ids) == 0 {
+    return nil
+  }
+  // fmt.Println("Getting comments", ids)
+  comments, err := client.GetItems(ctx, ids, maxGoroutines)
+  if err != nil {
+    return errors.Wrapf(err, "client.GetItems(%v)", ids)
+  }
 
-	for _, comment := range comments {
+  for _, comment := range comments {
     // fmt.Printf("Outputting comments %#v\n", comment)
-		out <- comment
+    out <- comment
 
-		err := getComments(ctx, client, comment.Kids, out)
-		if err != nil {
-			return errors.Wrapf(err, "recursive call to getComments for item %d", comment.ID)
-		}
-	}
+    err := getComments(ctx, client, comment.Kids, out)
+    if err != nil {
+      return errors.Wrapf(err, "getComments for item %d", comment.ID)
+    }
+  }
 
-	return nil
+  return nil
 }
 
 
@@ -92,6 +94,27 @@ var opts struct {
   StoryID int `short:"s" long:"storyID" description:"ID of item to download" required:"true"`
 }
 
+
+func withCancelOnInterrupt(ctx context.Context) (context.Context, func())  {
+
+  // trap Ctrl+C and call cancel on the context
+  ctx, cancel := context.WithCancel(ctx)
+  c := make(chan os.Signal, 1)
+  signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+  go func() {
+    select {
+    case <-c:
+      cancel()
+    case <-ctx.Done():
+    }
+  }()
+
+
+  return ctx, func() {
+    signal.Stop(c)
+    cancel()
+  }
+}
 
 func main() {
 
@@ -102,7 +125,9 @@ func main() {
       os.Exit(1)
   }
 
-	ctx := context.Background()
+  ctx := context.Background()
+  ctx, cancel := withCancelOnInterrupt(ctx)
+  defer cancel()
 
   fmt.Fprintln(os.Stderr, fmt.Sprintf("Downloading comments for story %d", opts.StoryID))
 
