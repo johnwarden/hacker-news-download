@@ -29,10 +29,12 @@ func getItemWithComments(ctx context.Context, id int) {
     fmt.Fprintln(os.Stderr, errors.Wrapf(err, "getComments for item %d", id))
   }
 
-  // fmt.Printf("Item %#v", item)
   n := item.Descendants
   if n == 0 && len(item.Kids) != 0 {
     n = -1
+    fmt.Fprintln(os.Stderr, fmt.Sprintf("Fetching unknown number of descendants"))
+  } else {
+    fmt.Fprintln(os.Stderr, fmt.Sprintf("Fetching %d descendants", n))    
   }
   bar := progressbar.Default(int64(n))
   out <- *item
@@ -129,7 +131,7 @@ func main() {
   ctx, cancel := withCancelOnInterrupt(ctx)
   defer cancel()
 
-  fmt.Fprintln(os.Stderr, fmt.Sprintf("Downloading comments for story %d", opts.StoryID))
+  fmt.Fprintln(os.Stderr, fmt.Sprintf("Fetching item %d", opts.StoryID))
 
   getItemWithComments(ctx, opts.StoryID)
 
